@@ -1,0 +1,98 @@
+#include <Wire.h>
+#include <Adafruit_MPU6050.h>
+#include <ESP8266WiFi.h>
+#include <FirebaseESP8266.h>
+#include <SoftwareSerial.h>
+#include <TinyGPS++.h>  
+
+// WiFi Credentials add your wifi ssid and password
+const char* ssid = "A";
+const char* password = "1234567890";
+
+// Firebase Credentials
+#define FIREBASE_HOST "https://gps-and-vibration-default-rtdb.asia-southeast1.firebasedatabase.app/"
+#define FIREBASE_AUTH "aFvYj8EtsKCunGVnIal44RwhmkOlKJaGDk0AvCRe"
+
+FirebaseConfig config;
+FirebaseAuth auth;
+FirebaseData firebaseData;
+
+// MPU6050 Sensor scl=d1 sda=d2
+Adafruit_MPU6050 mpu;
+
+// NEO-6M GPS
+SoftwareSerial gpsSerial(D7, D8);  // RX=D7, TX=D8
+TinyGPSPlus gps;
+
+// GPS Variables
+String latitude = "13.0853";
+String longitude = "75.3598";
+
+void setup() {
+    Serial.begin(115200);
+    gpsSerial.begin(9600);
+
+    // WiFi Connection
+    WiFi.begin(ssid, password);
+    Serial.print("Connecting to WiFi");
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nConnected to WiFi");
+
+    // Firebase Setup
+    config.host = FIREBASE_HOST;
+    config.signer.tokens.legacy_token = FIREBASE_AUTH;
+    Firebase.begin(&config, &auth);
+    Firebase.reconnectWiFi(true);
+
+    // Set ESP8266 I2C Pins
+    Wire.begin(D2, D1);  // SDA = D2 (GPIO4), SCL = D1 (GPIO5)
+
+    // Initialize MPU6050
+    if (!mpu.begin()) {
+        Serial.println("MPU6050 not found! Check wiring.");
+        while (1);
+    }
+    mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
+    Serial.println("MPU6050 Initialized");
+}
+
+void loop() {
+    ESP.wdtFeed();  // Prevent ESP from crashing due to long delays
+
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+
+    // Calculate Vibration Magnitude
+    float vibration = sqrt(sq(a.acceleration.x) + sq(a.acceleration.y) + sq(a.acceleration.z));
+
+    // Read GPS Location
+    readGPS();
+
+    // Send Data to Firebase
+    Firebase.setFloat(firebaseData, "/sensorData/vibration", vibration);
+    Firebase.setString(firebaseData, "/sensorData/latitude", latitude);
+    Firebase.setString(firebaseData, "/sensorData/longitude", longitude);
+
+    Serial.print("Vibration: ");
+    Serial.println(vibration);
+    Serial.print("Location: ");
+    Serial.print(latitude);
+    Serial.print(", ");
+    Serial.println(longitude);
+
+    delay(5000);  // Adjust sampling rate
+}
+
+// Function to Read GPS Data
+void readGPS() {
+    while (gpsSerial.available() > 0) {
+        gps.encode(gpsSerial.read());
+    }
+    if (gps.location.isValid()) {
+        latitude = String(gps.location.lat(), 6);
+        longitude = String(gps.location.lng(), 6);
+    }
+}
