@@ -4,8 +4,8 @@
 #include <ArduinoJson.h>
 
 // Wi-Fi Credentials
-const char* ssid = "A";
-const char* password = "1234567890";
+const char* ssid = "";
+const char* password = "";
 
 // Firebase Configuration
 FirebaseConfig config;
